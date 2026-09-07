@@ -9,8 +9,14 @@ import (
 )
 
 func TestIndexRebuildRecoversFromDeletedDatabase(t *testing.T) {
-	setupProject(t)
+	repo := setupProject(t)
 	createDraftSpecification(t)
+	if err := os.WriteFile(repo+"/referenced.go", []byte("package fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := executeForTest(t, "ref", "add", "1", "--kind", "code", "referenced.go"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := executeForTest(t, "ready", "1", "--author.name", "human"); err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +39,7 @@ func TestIndexRebuildRecoversFromDeletedDatabase(t *testing.T) {
 	project, _ = openProject()
 	defer project.Store.Close()
 	spec, err := project.Store.SpecificationByID(context.Background(), "demo-1")
-	if err != nil || spec.Dirty || len(spec.HeadHash) != 64 {
+	if err != nil || spec.Dirty || len(spec.HeadHash) != 64 || len(spec.References) != 1 || spec.References[0].Path != "referenced.go" {
 		t.Fatalf("specification not recovered: %#v, %v", spec, err)
 	}
 	revisions, err := project.Store.Revisions(context.Background(), spec.UUID)

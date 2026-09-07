@@ -276,7 +276,12 @@ func (s *Store) writeRevisionObject(revision Revision) (string, error) {
 	}
 	data = append(data, '\n')
 	if existing, err := os.ReadFile(path); err == nil {
-		if string(existing) != string(data) {
+		var stored Revision
+		if err := json.Unmarshal(existing, &stored); err != nil {
+			return "", fmt.Errorf("decode existing revision object %s: %w", revision.Hash, err)
+		}
+		verifiedHash, err := revisionHash(stored)
+		if err != nil || stored.Hash != revision.Hash || verifiedHash != revision.Hash {
 			return "", fmt.Errorf("object collision for revision %s", revision.Hash)
 		}
 		return path, nil

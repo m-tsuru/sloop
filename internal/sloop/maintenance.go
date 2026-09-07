@@ -106,13 +106,27 @@ func (s *Store) RebuildIndex(ctx context.Context, projectID string) (int, error)
 				head.Author.Agent, head.CreatedAt.Format(time.RFC3339Nano), head.Hash); err != nil {
 				return 0, fmt.Errorf("rebuild specification index: %w", err)
 			}
-			for _, ref := range head.References {
-				if _, err := tx.ExecContext(ctx, `INSERT INTO specification_references
-                    (id,spec_uuid,kind,path,start_line,end_line,git_commit,created_at) VALUES(?,?,?,?,?,?,?,?)`,
-					ref.ID, head.SpecificationUUID, ref.Kind, ref.Path, ref.StartLine, ref.EndLine,
-					nullString(ref.GitCommit), ref.CreatedAt.Format(time.RFC3339Nano)); err != nil {
-					return 0, fmt.Errorf("rebuild reference index: %w", err)
-				}
+			if err := insertRevisionReferences(ctx, tx, head); err != nil {
+				return 0, err
+			}
+		} else if existingDirty == 0 {
+			number, err := specificationNumber(head.SpecificationID)
+			if err != nil {
+				return 0, err
+			}
+			parents, _ := json.Marshal(head.Parents)
+			if _, err := tx.ExecContext(ctx, `UPDATE specifications SET id=?,number=?,title=?,status=?,body=?,parents_json=?,
+                author_name=?,author_email=?,author_agent=?,updated_at=?,head_hash=?,dirty=0 WHERE uuid=?`,
+				head.SpecificationID, number, head.Title, head.Status, head.Content, string(parents),
+				head.Author.Name, head.Author.Email, head.Author.Agent, head.CreatedAt.Format(time.RFC3339Nano),
+				head.Hash, specUUID); err != nil {
+				return 0, fmt.Errorf("refresh specification index: %w", err)
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM specification_references WHERE spec_uuid=?`, specUUID); err != nil {
+				return 0, fmt.Errorf("clear reference index: %w", err)
+			}
+			if err := insertRevisionReferences(ctx, tx, head); err != nil {
+				return 0, err
 			}
 		} else {
 			if _, err := tx.ExecContext(ctx, `UPDATE specifications SET head_hash=? WHERE uuid=?`, head.Hash, specUUID); err != nil {
@@ -124,6 +138,18 @@ func (s *Store) RebuildIndex(ctx context.Context, projectID string) (int, error)
 		return 0, err
 	}
 	return len(objects), nil
+}
+
+func insertRevisionReferences(ctx context.Context, tx *sql.Tx, revision Revision) error {
+	for _, ref := range revision.References {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO specification_references
+            (id,spec_uuid,kind,path,start_line,end_line,git_commit,created_at) VALUES(?,?,?,?,?,?,?,?)`,
+			ref.ID, revision.SpecificationUUID, ref.Kind, ref.Path, ref.StartLine, ref.EndLine,
+			nullString(ref.GitCommit), ref.CreatedAt.Format(time.RFC3339Nano)); err != nil {
+			return fmt.Errorf("rebuild reference index: %w", err)
+		}
+	}
+	return nil
 }
 
 func (s *Store) readAllRevisionObjects(projectID string) ([]Revision, error) {
