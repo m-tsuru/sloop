@@ -31,6 +31,17 @@ func newRootCommand(stdout, stderr io.Writer) *cobra.Command {
 	cmd.AddCommand(newNewCommand(stdout))
 	cmd.AddCommand(newEditCommand(stdout))
 	cmd.AddCommand(newLogCommand(stdout))
+	cmd.AddCommand(newStatusCommand(stdout))
+	cmd.AddCommand(newStatusAliasCommand("draft", sloop.StatusDraft, stdout))
+	cmd.AddCommand(newStatusAliasCommand("ready", sloop.StatusReady, stdout))
+	cmd.AddCommand(newStatusAliasCommand("force-ready", sloop.StatusForceReady, stdout))
+	cmd.AddCommand(newStatusAliasCommand("implemented", sloop.StatusImplemented, stdout))
+	cmd.AddCommand(newStatusAliasCommand("verified", sloop.StatusVerified, stdout))
+	cmd.AddCommand(newStatusAliasCommand("cancel", sloop.StatusCanceled, stdout))
+	cmd.AddCommand(newStatusAliasCommand("complete", sloop.StatusCompleted, stdout))
+	cmd.AddCommand(newReviewCommand("ACCEPTED", stdout))
+	cmd.AddCommand(newReviewCommand("REJECTED", stdout))
+	cmd.AddCommand(newAgentRunCommand(stdout))
 	return cmd
 }
 

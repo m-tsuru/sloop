@@ -95,3 +95,34 @@ type RevisionSummary struct {
 	CreatedAt      time.Time
 	ObjectPath     string
 }
+
+type Review struct {
+	ID           int64     `json:"id" yaml:"id"`
+	SpecUUID     string    `json:"-" yaml:"-"`
+	RevisionHash string    `json:"revision_hash" yaml:"revision-hash"`
+	Result       string    `json:"result" yaml:"result"`
+	Reason       string    `json:"reason,omitempty" yaml:"reason,omitempty"`
+	Author       Author    `json:"author" yaml:"author"`
+	CreatedAt    time.Time `json:"created_at" yaml:"date"`
+}
+
+type AgentRun struct {
+	ID           int64     `json:"id" yaml:"id"`
+	SpecUUID     string    `json:"-" yaml:"-"`
+	RevisionHash string    `json:"revision_hash" yaml:"revision-hash"`
+	Result       string    `json:"result" yaml:"result"`
+	Reason       string    `json:"reason,omitempty" yaml:"reason,omitempty"`
+	Author       Author    `json:"author" yaml:"author"`
+	CreatedAt    time.Time `json:"created_at" yaml:"date"`
+}
+
+type StatusTransition struct {
+	ID                int64
+	SpecUUID          string
+	BasedOnRevision   string
+	ResultingRevision string
+	Status            Status
+	Reason            string
+	Author            Author
+	CreatedAt         time.Time
+}

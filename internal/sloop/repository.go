@@ -442,3 +442,82 @@ func NewSpecification(prefix string, number int, author Author, body string) Spe
 		UpdatedAt: time.Now().Truncate(time.Microsecond), Dirty: true,
 	}
 }
+
+func (s *Store) RecordStatusTransition(ctx context.Context, transition StatusTransition) error {
+	_, err := s.DB.ExecContext(ctx, `INSERT INTO status_transitions
+        (spec_uuid,based_on_revision,resulting_revision,status,reason,author_name,author_email,author_agent,created_at)
+        VALUES(?,?,?,?,?,?,?,?,?)`, transition.SpecUUID, nullString(transition.BasedOnRevision),
+		transition.ResultingRevision, transition.Status, transition.Reason, transition.Author.Name,
+		transition.Author.Email, transition.Author.Agent, transition.CreatedAt.Format(time.RFC3339Nano))
+	if err != nil {
+		return fmt.Errorf("record status transition: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) AddReview(ctx context.Context, review Review) error {
+	_, err := s.DB.ExecContext(ctx, `INSERT INTO reviews
+        (spec_uuid,revision_hash,result,reason,author_name,author_email,author_agent,created_at)
+        VALUES(?,?,?,?,?,?,?,?)`, review.SpecUUID, review.RevisionHash, review.Result, review.Reason,
+		review.Author.Name, review.Author.Email, review.Author.Agent, review.CreatedAt.Format(time.RFC3339Nano))
+	if err != nil {
+		return fmt.Errorf("record review result: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) Reviews(ctx context.Context, specUUID string) ([]Review, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT id,spec_uuid,revision_hash,result,reason,
+        author_name,author_email,author_agent,created_at FROM reviews WHERE spec_uuid=? ORDER BY id`, specUUID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var reviews []Review
+	for rows.Next() {
+		var review Review
+		var agent int
+		var created string
+		if err := rows.Scan(&review.ID, &review.SpecUUID, &review.RevisionHash, &review.Result, &review.Reason,
+			&review.Author.Name, &review.Author.Email, &agent, &created); err != nil {
+			return nil, err
+		}
+		review.Author.Agent = agent != 0
+		review.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+		reviews = append(reviews, review)
+	}
+	return reviews, rows.Err()
+}
+
+func (s *Store) AddAgentRun(ctx context.Context, run AgentRun) error {
+	_, err := s.DB.ExecContext(ctx, `INSERT INTO agent_runs
+        (spec_uuid,revision_hash,result,reason,author_name,author_email,created_at)
+        VALUES(?,?,?,?,?,?,?)`, run.SpecUUID, run.RevisionHash, run.Result, run.Reason,
+		run.Author.Name, run.Author.Email, run.CreatedAt.Format(time.RFC3339Nano))
+	if err != nil {
+		return fmt.Errorf("record agent run: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) AgentRuns(ctx context.Context, specUUID string) ([]AgentRun, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT id,spec_uuid,revision_hash,result,reason,
+        author_name,author_email,created_at FROM agent_runs WHERE spec_uuid=? ORDER BY id`, specUUID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var runs []AgentRun
+	for rows.Next() {
+		var run AgentRun
+		var created string
+		if err := rows.Scan(&run.ID, &run.SpecUUID, &run.RevisionHash, &run.Result, &run.Reason,
+			&run.Author.Name, &run.Author.Email, &created); err != nil {
+			return nil, err
+		}
+		run.Author.Agent = true
+		run.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+		runs = append(runs, run)
+	}
+	return runs, rows.Err()
+}
