@@ -93,7 +93,19 @@ type editTarget struct {
 func resolveEditTarget(ctx context.Context, project *commandContext, selector string) (editTarget, error) {
 	if _, numeric := sloop.ParseSpecificationNumber(selector); numeric {
 		spec, err := resolveSpecification(ctx, project, selector)
-		return editTarget{spec: spec}, err
+		if err == nil {
+			return editTarget{spec: spec}, nil
+		}
+		// A digit-only short hash is also valid. Prefer a specification number
+		// when it exists, then fall back to revision-prefix resolution.
+		if len(selector) <= 64 {
+			revision, revisionErr := project.Store.ResolveRevisionPrefix(ctx, selector)
+			if revisionErr == nil {
+				spec, revisionErr = project.Store.SpecificationByUUID(ctx, revision.SpecificationUUID)
+				return editTarget{spec: spec, revision: &revision}, revisionErr
+			}
+		}
+		return editTarget{}, err
 	}
 	if before, after, ok := strings.Cut(selector, "#"); ok {
 		spec, err := resolveSpecification(ctx, project, before)
