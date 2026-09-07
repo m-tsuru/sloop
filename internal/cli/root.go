@@ -42,6 +42,7 @@ func newRootCommand(stdout, stderr io.Writer) *cobra.Command {
 	cmd.AddCommand(newReviewCommand("ACCEPTED", stdout))
 	cmd.AddCommand(newReviewCommand("REJECTED", stdout))
 	cmd.AddCommand(newAgentRunCommand(stdout))
+	cmd.AddCommand(newReferenceCommand(stdout))
 	return cmd
 }
 

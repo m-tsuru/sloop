@@ -4,12 +4,23 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/m-tsuru/sloop/internal/sloop"
 )
+
+func runGit(t *testing.T, repo string, args ...string) string {
+	t.Helper()
+	commandArgs := append([]string{"-C", repo}, args...)
+	output, err := exec.Command("git", commandArgs...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v: %s", args, err, output)
+	}
+	return string(output)
+}
 
 func setupProject(t *testing.T) string {
 	t.Helper()

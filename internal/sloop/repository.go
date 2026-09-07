@@ -521,3 +521,101 @@ func (s *Store) AgentRuns(ctx context.Context, specUUID string) ([]AgentRun, err
 	}
 	return runs, rows.Err()
 }
+
+func (s *Store) AddReference(ctx context.Context, spec *Specification, ref Reference, author Author) error {
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO specification_references
+        (id,spec_uuid,kind,path,start_line,end_line,git_commit,created_at) VALUES(?,?,?,?,?,?,?,?)`,
+		ref.ID, spec.UUID, ref.Kind, ref.Path, ref.StartLine, ref.EndLine, nullString(ref.GitCommit),
+		ref.CreatedAt.Format(time.RFC3339Nano)); err != nil {
+		return fmt.Errorf("add reference: %w", err)
+	}
+	if spec.Status != StatusDraft {
+		spec.Status = StatusDraft
+	}
+	spec.Author = author
+	spec.UpdatedAt = ref.CreatedAt
+	spec.Dirty = true
+	if _, err := tx.ExecContext(ctx, `UPDATE specifications SET status=?,author_name=?,author_email=?,author_agent=?,updated_at=?,dirty=1 WHERE uuid=?`,
+		spec.Status, author.Name, author.Email, author.Agent, spec.UpdatedAt.Format(time.RFC3339Nano), spec.UUID); err != nil {
+		return fmt.Errorf("mark specification changed: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	spec.References = append(spec.References, ref)
+	return nil
+}
+
+func (s *Store) RemoveReference(ctx context.Context, spec *Specification, idPrefix string, author Author) (Reference, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT id,kind,path,start_line,end_line,git_commit,created_at
+        FROM specification_references WHERE spec_uuid=? AND id LIKE ? ORDER BY id LIMIT 2`, spec.UUID, idPrefix+"%")
+	if err != nil {
+		return Reference{}, err
+	}
+	var matches []Reference
+	for rows.Next() {
+		var ref Reference
+		var start, end sql.NullInt64
+		var commit sql.NullString
+		var created string
+		if err := rows.Scan(&ref.ID, &ref.Kind, &ref.Path, &start, &end, &commit, &created); err != nil {
+			rows.Close()
+			return Reference{}, err
+		}
+		if start.Valid {
+			value := int(start.Int64)
+			ref.StartLine = &value
+		}
+		if end.Valid {
+			value := int(end.Int64)
+			ref.EndLine = &value
+		}
+		ref.GitCommit = commit.String
+		ref.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+		matches = append(matches, ref)
+	}
+	if err := rows.Close(); err != nil {
+		return Reference{}, err
+	}
+	if len(matches) == 0 {
+		return Reference{}, fmt.Errorf("reference %q not found for %s", idPrefix, spec.ID)
+	}
+	if len(matches) > 1 {
+		return Reference{}, fmt.Errorf("reference prefix %q is ambiguous", idPrefix)
+	}
+
+	now := time.Now().Truncate(time.Microsecond)
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return Reference{}, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM specification_references WHERE id=? AND spec_uuid=?`, matches[0].ID, spec.UUID); err != nil {
+		return Reference{}, fmt.Errorf("remove reference: %w", err)
+	}
+	if spec.Status != StatusDraft {
+		spec.Status = StatusDraft
+	}
+	spec.Author = author
+	spec.UpdatedAt = now
+	spec.Dirty = true
+	if _, err := tx.ExecContext(ctx, `UPDATE specifications SET status=?,author_name=?,author_email=?,author_agent=?,updated_at=?,dirty=1 WHERE uuid=?`,
+		spec.Status, author.Name, author.Email, author.Agent, now.Format(time.RFC3339Nano), spec.UUID); err != nil {
+		return Reference{}, fmt.Errorf("mark specification changed: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return Reference{}, err
+	}
+	for i := range spec.References {
+		if spec.References[i].ID == matches[0].ID {
+			spec.References = append(spec.References[:i], spec.References[i+1:]...)
+			break
+		}
+	}
+	return matches[0], nil
+}
