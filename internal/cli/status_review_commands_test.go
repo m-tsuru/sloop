@@ -31,7 +31,7 @@ func TestHumanAndAgentStatusTransitionsCreateRevisions(t *testing.T) {
 	if _, err := executeForTest(t, "ready", "1", "--author.name", "human"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := executeForTest(t, "implemented", "demo-1", "--reason", "Implemented parser and its tests.", "--author.name", "bot", "--author.agent"); err != nil {
+	if _, err := executeForTest(t, "implemented", "demo-1", "--reason", "Implemented parser and its tests.", "--author.name", "bot", "--author.agent", "true"); err != nil {
 		t.Fatal(err)
 	}
 	project, _ := openProject()

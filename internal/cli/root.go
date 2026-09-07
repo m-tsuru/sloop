@@ -14,8 +14,24 @@ import (
 
 func Execute(args []string, stdout, stderr io.Writer) error {
 	root := newRootCommand(stdout, stderr)
-	root.SetArgs(args)
+	root.SetArgs(normalizeExplicitBoolArgs(args))
 	return root.Execute()
+}
+
+// pflag bool options normally do not consume a following value. The public
+// Sloop CLI examples deliberately use "--author.agent true", so normalize
+// that spelling while retaining the convenient bare bool flag form.
+func normalizeExplicitBoolArgs(args []string) []string {
+	normalized := make([]string, 0, len(args))
+	for index := 0; index < len(args); index++ {
+		if args[index] == "--author.agent" && index+1 < len(args) && (args[index+1] == "true" || args[index+1] == "false") {
+			normalized = append(normalized, args[index]+"="+args[index+1])
+			index++
+			continue
+		}
+		normalized = append(normalized, args[index])
+	}
+	return normalized
 }
 
 func newRootCommand(stdout, stderr io.Writer) *cobra.Command {
