@@ -89,6 +89,23 @@ func (s *Store) SpecificationByUUID(ctx context.Context, id string) (Specificati
 	return spec, err
 }
 
+func (s *Store) Specifications(ctx context.Context) ([]Specification, error) {
+	rows, err := s.DB.QueryContext(ctx, selectSpecification+` ORDER BY updated_at DESC, id`)
+	if err != nil {
+		return nil, fmt.Errorf("list specifications: %w", err)
+	}
+	defer rows.Close()
+	var specifications []Specification
+	for rows.Next() {
+		spec, err := scanSpecification(rows)
+		if err != nil {
+			return nil, err
+		}
+		specifications = append(specifications, spec)
+	}
+	return specifications, rows.Err()
+}
+
 func (s *Store) SaveSpecification(ctx context.Context, spec Specification) error {
 	parents, err := json.Marshal(spec.Parents)
 	if err != nil {
@@ -618,4 +635,25 @@ func (s *Store) RemoveReference(ctx context.Context, spec *Specification, idPref
 		}
 	}
 	return matches[0], nil
+}
+
+func (s *Store) GitRelations(ctx context.Context, specUUID string) ([]GitRelation, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT ri.spec_id,gr.revision_hash,gr.git_commit,gr.relation,gr.created_at
+        FROM git_relations gr JOIN revision_index ri ON ri.hash=gr.revision_hash
+        WHERE gr.spec_uuid=? ORDER BY gr.created_at,gr.git_commit`, specUUID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var relations []GitRelation
+	for rows.Next() {
+		var relation GitRelation
+		var created string
+		if err := rows.Scan(&relation.SpecificationID, &relation.RevisionHash, &relation.Commit, &relation.Relation, &created); err != nil {
+			return nil, err
+		}
+		relation.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+		relations = append(relations, relation)
+	}
+	return relations, rows.Err()
 }

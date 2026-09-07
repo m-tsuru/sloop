@@ -126,3 +126,11 @@ type StatusTransition struct {
 	Author            Author
 	CreatedAt         time.Time
 }
+
+type GitRelation struct {
+	SpecificationID string    `json:"specification_id" yaml:"id"`
+	RevisionHash    string    `json:"revision_hash" yaml:"revision-hash"`
+	Commit          string    `json:"commit" yaml:"commit"`
+	Relation        string    `json:"relation" yaml:"relation"`
+	CreatedAt       time.Time `json:"created_at,omitempty" yaml:"date,omitempty"`
+}
