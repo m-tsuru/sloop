@@ -1,5 +1,6 @@
 <div align="center">
     <h1>Sloop</h1>
+    <p>(C) 2026 Michiru Tsurumaru / MIT License</p>
 </div>
 
 ## What is this?
@@ -19,6 +20,10 @@ Sloop stores implementation intent independently from source code and exposes on
 - すべてを CI に載せたり、GitHub Issues や Notion でそれを管理する方法はワークフロー的に良さそうに見えるが、アカウント BAN やデータの可搬性的にあまりうれしくない
 - ユーザに提供する成果物のドキュメンテーションを LLM に投げた仕様からいい感じに活用したい。生成したいわけではない。
 - Git のような分散型でありたい（インターネットがない場所でも安定して書きたい）
+
+## Name Origin
+
+- 「AI slop」+「loop」
 
 ## Usage
 
