@@ -657,3 +657,14 @@ func (s *Store) GitRelations(ctx context.Context, specUUID string) ([]GitRelatio
 	}
 	return relations, rows.Err()
 }
+
+func (s *Store) AddGitRelation(ctx context.Context, specUUID string, relation GitRelation) error {
+	_, err := s.DB.ExecContext(ctx, `INSERT OR IGNORE INTO git_relations
+        (spec_uuid,revision_hash,git_commit,relation,created_at) VALUES(?,?,?,?,?)`,
+		specUUID, relation.RevisionHash, relation.Commit, relation.Relation,
+		relation.CreatedAt.Format(time.RFC3339Nano))
+	if err != nil {
+		return fmt.Errorf("record Git relation: %w", err)
+	}
+	return nil
+}

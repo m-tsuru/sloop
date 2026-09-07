@@ -47,6 +47,7 @@ func newRootCommand(stdout, stderr io.Writer) *cobra.Command {
 	cmd.AddCommand(newViewCommand(stdout))
 	cmd.AddCommand(newQueryCommand(stdout))
 	cmd.AddCommand(newContextCommand(stdout))
+	cmd.AddCommand(newCommitRecordCommand(stdout))
 	return cmd
 }
 
