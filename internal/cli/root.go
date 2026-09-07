@@ -28,6 +28,9 @@ func newRootCommand(stdout, stderr io.Writer) *cobra.Command {
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 	cmd.AddCommand(newInitCommand(stdout))
+	cmd.AddCommand(newNewCommand(stdout))
+	cmd.AddCommand(newEditCommand(stdout))
+	cmd.AddCommand(newLogCommand(stdout))
 	return cmd
 }
 
