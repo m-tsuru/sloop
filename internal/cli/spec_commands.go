@@ -23,6 +23,9 @@ func newNewCommand(stdout io.Writer) *cobra.Command {
 		Short: "Create a specification",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if templateName == "" || filepath.Base(templateName) != templateName || templateName == "." || templateName == ".." {
+				return fmt.Errorf("invalid template name %q", templateName)
+			}
 			project, err := openProject()
 			if err != nil {
 				return err
@@ -55,11 +58,23 @@ func newNewCommand(stdout io.Writer) *cobra.Command {
 				return fmt.Errorf("specification ID cannot be changed (expected %s)", spec.ID)
 			}
 			if author.Agent && sloop.Status(doc.Status) != sloop.StatusDraft {
-				return fmt.Errorf("agents cannot change specification status through Markdown editing.\nUse `sloop status` with a reason instead")
+				return fmt.Errorf("agents cannot change specification status through Markdown editing.\nUse `sloop status` with a reason instead.")
 			}
 			spec.Title, spec.Status, spec.Parents, spec.Body = doc.Title, sloop.Status(doc.Status), doc.Parents, doc.Body
 			if err := project.Store.CreateSpecification(ctx, spec); err != nil {
 				return err
+			}
+			if spec.Status != sloop.StatusDraft {
+				revision, _, err := project.Store.RecordRevision(ctx, project.Project.Config.Project.ID, &spec, author)
+				if err != nil {
+					return err
+				}
+				if err := project.Store.RecordStatusTransition(ctx, sloop.StatusTransition{
+					SpecUUID: spec.UUID, ResultingRevision: revision.Hash, Status: spec.Status,
+					Author: author, CreatedAt: revision.CreatedAt,
+				}); err != nil {
+					return err
+				}
 			}
 			fmt.Fprintf(stdout, "Specification %s is created.\n", spec.ID)
 			return nil
@@ -76,16 +91,9 @@ type editTarget struct {
 }
 
 func resolveEditTarget(ctx context.Context, project *commandContext, selector string) (editTarget, error) {
-	if hash := strings.ToLower(selector); !strings.Contains(selector, "#") && len(hash) >= 4 && isHex(hash) {
-		revision, err := project.Store.ResolveRevisionPrefix(ctx, hash)
-		if err == nil {
-			spec, err := project.Store.SpecificationByUUID(ctx, revision.SpecificationUUID)
-			return editTarget{spec: spec, revision: &revision}, err
-		}
-		// A numeric selector can look like a hash. Prefer specification numbers.
-		if _, numeric := sloop.ParseSpecificationNumber(selector); !numeric {
-			return editTarget{}, err
-		}
+	if _, numeric := sloop.ParseSpecificationNumber(selector); numeric {
+		spec, err := resolveSpecification(ctx, project, selector)
+		return editTarget{spec: spec}, err
 	}
 	if before, after, ok := strings.Cut(selector, "#"); ok {
 		spec, err := resolveSpecification(ctx, project, before)
@@ -97,6 +105,14 @@ func resolveEditTarget(ctx context.Context, project *commandContext, selector st
 			return editTarget{}, fmt.Errorf("invalid revision selector %q", selector)
 		}
 		revision, err := project.Store.RevisionByNumber(ctx, spec.UUID, number)
+		return editTarget{spec: spec, revision: &revision}, err
+	}
+	if hash := strings.ToLower(selector); isHex(hash) {
+		revision, err := project.Store.ResolveRevisionPrefix(ctx, hash)
+		if err != nil {
+			return editTarget{}, err
+		}
+		spec, err := project.Store.SpecificationByUUID(ctx, revision.SpecificationUUID)
 		return editTarget{spec: spec, revision: &revision}, err
 	}
 	spec, err := resolveSpecification(ctx, project, selector)
@@ -147,6 +163,15 @@ func newEditCommand(stdout io.Writer) *cobra.Command {
 				if answer != "y" && answer != "yes" {
 					return nil
 				}
+				if spec.Dirty {
+					boundaryAuthor := spec.Author
+					if boundaryAuthor.Name == "" {
+						boundaryAuthor = author
+					}
+					if _, _, err := project.Store.RecordRevision(ctx, project.Project.Config.Project.ID, &spec, boundaryAuthor); err != nil {
+						return err
+					}
+				}
 				if _, err := project.Store.RestoreRevision(ctx, project.Project.Config.Project.ID, &spec, *target.revision, author); err != nil {
 					return err
 				}
@@ -175,7 +200,7 @@ func newEditCommand(stdout io.Writer) *cobra.Command {
 			}
 			requestedStatus := sloop.Status(doc.Status)
 			if author.Agent && requestedStatus != spec.Status {
-				return fmt.Errorf("agents cannot change specification status through Markdown editing.\nUse `sloop status` with a reason instead")
+				return fmt.Errorf("agents cannot change specification status through Markdown editing.\nUse `sloop status` with a reason instead.")
 			}
 			meaningful := !sloop.EqualMeaning(spec, doc)
 			statusChanged := requestedStatus != spec.Status

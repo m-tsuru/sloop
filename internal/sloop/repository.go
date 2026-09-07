@@ -128,7 +128,7 @@ func (s *Store) References(ctx context.Context, specUUID string) ([]Reference, e
 		return nil, fmt.Errorf("load references: %w", err)
 	}
 	defer rows.Close()
-	var refs []Reference
+	refs := make([]Reference, 0)
 	for rows.Next() {
 		var ref Reference
 		var start, end sql.NullInt64
@@ -303,6 +303,9 @@ func (s *Store) writeRevisionObject(revision Revision) (string, error) {
 	if err := os.Rename(tmpName, path); err != nil {
 		return "", fmt.Errorf("install revision object: %w", err)
 	}
+	if err := os.Chmod(path, 0o444); err != nil {
+		return "", fmt.Errorf("make revision object read-only: %w", err)
+	}
 	return path, nil
 }
 
@@ -373,10 +376,7 @@ func (s *Store) RevisionByNumber(ctx context.Context, specUUID string, number in
 }
 
 func (s *Store) ResolveRevisionPrefix(ctx context.Context, prefix string) (Revision, error) {
-	if len(prefix) < 4 || len(prefix) > 64 {
-		return Revision{}, fmt.Errorf("invalid revision hash prefix %q", prefix)
-	}
-	if _, err := hex.DecodeString(prefix); err != nil {
+	if len(prefix) < 1 || len(prefix) > 64 || !isHexPrefix(prefix) {
 		return Revision{}, fmt.Errorf("invalid revision hash prefix %q", prefix)
 	}
 	rows, err := s.DB.QueryContext(ctx, `SELECT hash FROM revision_index WHERE hash LIKE ? ORDER BY hash LIMIT 2`, strings.ToLower(prefix)+"%")
@@ -396,9 +396,18 @@ func (s *Store) ResolveRevisionPrefix(ctx context.Context, prefix string) (Revis
 		return Revision{}, fmt.Errorf("revision prefix %q not found", prefix)
 	}
 	if len(hashes) > 1 {
-		return Revision{}, fmt.Errorf("revision prefix '%s' is ambiguous.\nPlease provide a longer revision hash", prefix)
+		return Revision{}, fmt.Errorf("revision prefix '%s' is ambiguous.\nPlease provide a longer revision hash.", prefix)
 	}
 	return s.RevisionByHash(ctx, hashes[0])
+}
+
+func isHexPrefix(value string) bool {
+	for _, char := range value {
+		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f') || (char >= 'A' && char <= 'F')) {
+			return false
+		}
+	}
+	return value != ""
 }
 
 func (s *Store) RestoreRevision(ctx context.Context, projectID string, spec *Specification, source Revision, author Author) (Revision, error) {
@@ -645,7 +654,7 @@ func (s *Store) GitRelations(ctx context.Context, specUUID string) ([]GitRelatio
 		return nil, err
 	}
 	defer rows.Close()
-	var relations []GitRelation
+	relations := make([]GitRelation, 0)
 	for rows.Next() {
 		var relation GitRelation
 		var created string

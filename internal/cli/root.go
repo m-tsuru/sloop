@@ -25,6 +25,7 @@ func newRootCommand(stdout, stderr io.Writer) *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}
+	cmd.CompletionOptions.DisableDefaultCmd = true
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 	cmd.AddCommand(newInitCommand(stdout))
@@ -82,6 +83,12 @@ func newInitCommand(stdout io.Writer) *cobra.Command {
 			} else if !os.IsNotExist(err) {
 				return fmt.Errorf("inspect existing project: %w", err)
 			}
+			defaultTemplate := filepath.Join(configDir, "templates", "default.md")
+			if _, err := os.Stat(defaultTemplate); err == nil {
+				return fmt.Errorf("refusing to overwrite existing file %s", defaultTemplate)
+			} else if !os.IsNotExist(err) {
+				return fmt.Errorf("inspect default template: %w", err)
+			}
 
 			projectID := slug + "-" + uuid.NewString()
 			store, err := sloop.OpenStore(projectID)
@@ -104,7 +111,7 @@ func newInitCommand(stdout io.Writer) *cobra.Command {
 				return err
 			}
 			const template = "## 目的 {#goal}\n\n## 仕様 {#specification}\n\n## 完了条件 {#acceptance-criteria}\n"
-			if err := os.WriteFile(filepath.Join(configDir, "templates", "default.md"), []byte(template), 0o644); err != nil {
+			if err := os.WriteFile(defaultTemplate, []byte(template), 0o644); err != nil {
 				return fmt.Errorf("write default template: %w", err)
 			}
 			fmt.Fprintf(stdout, "Project '%s' is created.\nProject ID: %s\n", slug, projectID)

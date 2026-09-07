@@ -88,7 +88,7 @@ func newListCommand(stdout io.Writer) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var records []listRecord
+			records := make([]listRecord, 0)
 			for _, spec := range specs {
 				if matchesFilters(spec, filters) {
 					records = append(records, listRecord{spec.ID, spec.Title, spec.Status, spec.UpdatedAt, spec.Author})
@@ -196,7 +196,7 @@ func newViewCommand(stdout io.Writer) *cobra.Command {
 				body, status, title = target.revision.Content, target.revision.Status, target.revision.Title
 				parents, refs = target.revision.Parents, target.revision.References
 				revisionNumber, revisionHash = target.revision.RevisionNumber, target.revision.Hash
-			} else if spec.HeadHash != "" {
+			} else if spec.HeadHash != "" && !spec.Dirty {
 				revision, err := project.Store.RevisionByHash(cmd.Context(), spec.HeadHash)
 				if err != nil {
 					return err
@@ -315,7 +315,7 @@ func newContextCommand(stdout io.Writer) *cobra.Command {
 				return err
 			}
 			if !working && (spec.Dirty || spec.HeadHash == "") {
-				return fmt.Errorf("%s has unrecorded working changes.\nRecord or mark the specification READY before generating an agent context", spec.ID)
+				return fmt.Errorf("%s has unrecorded working changes.\nRecord or mark the specification READY before generating an agent context.", spec.ID)
 			}
 			document := contextDocument{
 				ProjectID: project.Project.Config.Project.ID, SpecificationID: spec.ID,
@@ -339,12 +339,23 @@ func newContextCommand(stdout io.Writer) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if working {
+				document.GitRelations = []sloop.GitRelation{}
+			} else {
+				relations := document.GitRelations[:0]
+				for _, relation := range document.GitRelations {
+					if relation.RevisionHash == document.RevisionHash {
+						relations = append(relations, relation)
+					}
+				}
+				document.GitRelations = relations
+			}
 			reviews, err := project.Store.Reviews(cmd.Context(), spec.UUID)
 			if err != nil {
 				return err
 			}
 			for _, review := range reviews {
-				if working || review.RevisionHash == document.RevisionHash {
+				if !working && review.RevisionHash == document.RevisionHash {
 					document.Reviews = append(document.Reviews, review)
 				}
 			}
@@ -373,7 +384,10 @@ func reviewPolicy(status sloop.Status) string {
 
 func writeTextContext(output io.Writer, document contextDocument) {
 	fmt.Fprintln(output, "# Sloop Agent Context")
-	fmt.Fprintf(output, "\nSpecification ID: %s\nRevision Hash: %s\nStatus: %s\nRecorded: %t\n", document.SpecificationID, document.RevisionHash, document.Status, document.Recorded)
+	fmt.Fprintf(output, "\nSpecification ID: %s\nTitle: %s\nRevision Hash: %s\nStatus: %s\nRecorded: %t\n", document.SpecificationID, document.Title, document.RevisionHash, document.Status, document.Recorded)
+	if len(document.Parents) > 0 {
+		fmt.Fprintf(output, "Parents: %s\n", strings.Join(document.Parents, ", "))
+	}
 	fmt.Fprintf(output, "\n## Goal\n\n%s\n\n## Specification\n\n%s\n\n## Acceptance Criteria\n\n%s\n", document.Goal, document.Specification, document.AcceptanceCriteria)
 	fmt.Fprintln(output, "\n## Explicit References")
 	for _, ref := range document.References {

@@ -2,7 +2,6 @@ package sloop
 
 import (
 	"bufio"
-	"bytes"
 	"errors"
 	"fmt"
 	"regexp"
@@ -128,10 +127,14 @@ func Sections(markdown string) map[string]string {
 	content := normalizeLF(markdown)
 	for _, pos := range positions {
 		end := pos.end
-		if end < pos.start {
-			end = pos.start
+		start := pos.start
+		if start > len(content) {
+			start = len(content)
 		}
-		result[pos.id] = strings.TrimSpace(content[pos.start:end])
+		if end < start {
+			end = start
+		}
+		result[pos.id] = strings.TrimSpace(content[start:end])
 	}
 	return result
 }
@@ -146,8 +149,4 @@ func EqualMeaning(a Specification, doc EditableDocument) bool {
 		}
 	}
 	return true
-}
-
-func compactYAML(data []byte) []byte {
-	return bytes.TrimSpace(data)
 }

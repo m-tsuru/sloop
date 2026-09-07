@@ -32,3 +32,10 @@ func TestRevisionHashIgnoresTimestampAndParentOrder(t *testing.T) {
 		t.Fatalf("hashes differ: %s %s", hash1, hash2)
 	}
 }
+
+func TestSectionsHandlesHeadingWithoutTrailingNewline(t *testing.T) {
+	sections := Sections("## Empty {#empty}")
+	if value, ok := sections["empty"]; !ok || value != "" {
+		t.Fatalf("unexpected sections: %#v", sections)
+	}
+}

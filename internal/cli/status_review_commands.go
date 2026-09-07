@@ -56,10 +56,10 @@ func changeStatuses(cmd *cobra.Command, stdout io.Writer, selectors string, stat
 	reason = strings.TrimSpace(reason)
 	if author.Agent {
 		if reason == "" {
-			return fmt.Errorf("agent status transitions require a reason")
+			return fmt.Errorf("agent status transitions require a reason.")
 		}
 		if status != sloop.StatusImplemented && status != sloop.StatusVerified {
-			return fmt.Errorf("an agent cannot set specification status to %s", status)
+			return fmt.Errorf("an agent cannot set specification status to %s.", status)
 		}
 		if trivialReason(reason) {
 			return fmt.Errorf("agent status transition reason must explain the basis for the transition")
@@ -139,7 +139,7 @@ func newReviewCommand(result string, stdout io.Writer) *cobra.Command {
 				return fmt.Errorf("rejected reviews require a reason")
 			}
 			if result == "REJECTED" && spec.Status == sloop.StatusForceReady {
-				return fmt.Errorf("specification %s is FORCEREADY and cannot be rejected for specification ambiguity", spec.ID)
+				return fmt.Errorf("specification %s is FORCEREADY and cannot be rejected for specification ambiguity.", spec.ID)
 			}
 			if spec.HeadHash == "" || spec.Dirty {
 				return fmt.Errorf("%s has no current recorded revision to review", spec.ID)
