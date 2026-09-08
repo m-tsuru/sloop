@@ -101,4 +101,7 @@ Plain text.
 	if document["recorded"] != true || len(document["revision_hash"].(string)) != 64 || document["goal"] != "Keep context local." {
 		t.Fatalf("unexpected context: %#v", document)
 	}
+	if specificationUUID, ok := document["specification_uuid"].(string); !ok || specificationUUID == "" {
+		t.Fatalf("context is missing specification_uuid: %#v", document)
+	}
 }

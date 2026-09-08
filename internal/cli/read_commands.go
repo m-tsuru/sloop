@@ -283,6 +283,7 @@ func newQueryCommand(stdout io.Writer) *cobra.Command {
 type contextDocument struct {
 	ProjectID          string              `json:"project_id"`
 	SpecificationID    string              `json:"specification_id"`
+	SpecificationUUID  string              `json:"specification_uuid"`
 	RevisionHash       string              `json:"revision_hash,omitempty"`
 	Recorded           bool                `json:"recorded"`
 	Status             sloop.Status        `json:"status"`
@@ -319,7 +320,8 @@ func newContextCommand(stdout io.Writer) *cobra.Command {
 			}
 			document := contextDocument{
 				ProjectID: project.Project.Config.Project.ID, SpecificationID: spec.ID,
-				Recorded: !working, Status: spec.Status, Title: spec.Title, Parents: spec.Parents,
+				SpecificationUUID: spec.UUID,
+				Recorded:          !working, Status: spec.Status, Title: spec.Title, Parents: spec.Parents,
 				References: spec.References, ReviewPolicy: reviewPolicy(spec.Status),
 			}
 			body := spec.Body
@@ -384,7 +386,7 @@ func reviewPolicy(status sloop.Status) string {
 
 func writeTextContext(output io.Writer, document contextDocument) {
 	fmt.Fprintln(output, "# Sloop Agent Context")
-	fmt.Fprintf(output, "\nSpecification ID: %s\nTitle: %s\nRevision Hash: %s\nStatus: %s\nRecorded: %t\n", document.SpecificationID, document.Title, document.RevisionHash, document.Status, document.Recorded)
+	fmt.Fprintf(output, "\nSpecification ID: %s\nSpecification UUID: %s\nTitle: %s\nRevision Hash: %s\nStatus: %s\nRecorded: %t\n", document.SpecificationID, document.SpecificationUUID, document.Title, document.RevisionHash, document.Status, document.Recorded)
 	if len(document.Parents) > 0 {
 		fmt.Fprintf(output, "Parents: %s\n", strings.Join(document.Parents, ", "))
 	}
