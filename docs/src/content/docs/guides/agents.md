@@ -13,6 +13,18 @@ sloop context 1 --json > /tmp/sloop-context.json
 
 生成した Context を利用する Agent に渡します。Sloop Core は特定ベンダーの API を呼ばず、CLI の出力で連携します。MCP Server や自動実行 Connector は現在ありません。
 
+## Codex plugin
+
+この Repository は Codex plugin manifest と `sloop-implement` Skill を含みます。Plugin を導入し、`sloop` CLI が `PATH` 上にある状態では、次のように実装 Workflow を開始できます。
+
+```text
+/sloop implement sloop-1
+```
+
+自然言語で `Sloop の sloop-1 を実装して` と依頼しても同じ Workflow として扱います。Skill は `sloop context --json` で固定 Revision を取得し、READY の仕様不足を編集前に Review します。実装できる場合は Acceptance Criteria を検証し、根拠付きで IMPLEMENTED、VERIFIED を記録します。Sloop の内部 DB や Object Store は直接操作しません。
+
+Plugin も Sloop CLI を交換インターフェースとして使うため、MCP Server は必須ではありません。
+
 次のような作業指示を Context とともに渡せます。
 
 ```text

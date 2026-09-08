@@ -30,7 +30,7 @@ JSON の主なフィールドは次のとおりです。
 
 | キー | 型・内容 |
 | --- | --- |
-| `project_id`, `specification_id` | 文字列の ID |
+| `project_id`, `specification_id`, `specification_uuid` | Project ID、表示用 Specification ID、永続 Specification UUID |
 | `revision_hash` | 64 桁の SHA-256。Working Context では省略 |
 | `recorded` | 固定 Revision なら `true`、Working Context は `false` |
 | `status`, `title` | 状態とタイトル |

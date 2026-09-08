@@ -1,0 +1,6 @@
+interface:
+  display_name: "Sloop Implement"
+  short_description: "Implement a ready Sloop specification safely"
+  default_prompt: "Use $sloop-implement to implement Sloop specification sloop-1."
+policy:
+  allow_implicit_invocation: true
