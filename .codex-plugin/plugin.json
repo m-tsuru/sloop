@@ -1,0 +1,27 @@
+{
+  "name": "sloop",
+  "version": "0.1.0",
+  "description": "Implement and verify Sloop specifications with Codex.",
+  "author": {
+    "name": "Michiru Tsurumaru",
+    "url": "https://github.com/m-tsuru"
+  },
+  "homepage": "https://sloop-docs.s8i.jp.eu.org/",
+  "repository": "https://github.com/m-tsuru/sloop",
+  "license": "MIT",
+  "keywords": ["sloop", "specification", "coding-agent"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Sloop",
+    "shortDescription": "Implement a ready Sloop specification safely.",
+    "longDescription": "Loads a recorded Sloop specification, reviews it, implements it, maintains feature bindings, verifies acceptance criteria, and records the result through the Sloop CLI.",
+    "developerName": "Michiru Tsurumaru",
+    "category": "Developer Tools",
+    "capabilities": ["Local CLI", "Repository Write"],
+    "websiteURL": "https://sloop-docs.s8i.jp.eu.org/",
+    "defaultPrompt": [
+      "/sloop implement sloop-1",
+      "Implement sloop-1 using Sloop."
+    ]
+  }
+}
