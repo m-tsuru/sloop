@@ -60,12 +60,20 @@ func newNewCommand(stdout io.Writer) *cobra.Command {
 			if author.Agent && sloop.Status(doc.Status) != sloop.StatusDraft {
 				return fmt.Errorf("agents cannot change specification status through Markdown editing.\nUse `sloop status` with a reason instead.")
 			}
-			spec.Title, spec.Status, spec.Parents, spec.Body = doc.Title, sloop.Status(doc.Status), doc.Parents, doc.Body
+			spec.Title, spec.Status, spec.Parents, spec.Features, spec.Body = doc.Title, sloop.Status(doc.Status), doc.Parents, doc.Features, doc.Body
+			if spec.Status == sloop.StatusDraft {
+				if err := warnUnresolvedBindings(cmd, project.Project.Root, spec.Features); err != nil {
+					return err
+				}
+			} else if _, err := validateSpecificationBindings(project.Project.Root, spec,
+				fmt.Sprintf("Remove or update the bindings before creating %s with status %s.", spec.ID, spec.Status)); err != nil {
+				return err
+			}
 			if err := project.Store.CreateSpecification(ctx, spec); err != nil {
 				return err
 			}
 			if spec.Status != sloop.StatusDraft {
-				revision, _, err := project.Store.RecordRevision(ctx, project.Project.Config.Project.ID, &spec, author)
+				revision, _, err := project.Store.RecordRevision(ctx, project.Project.Config.Project.ID, project.Project.Root, &spec, author)
 				if err != nil {
 					return err
 				}
@@ -180,12 +188,16 @@ func newEditCommand(stdout io.Writer) *cobra.Command {
 					if boundaryAuthor.Name == "" {
 						boundaryAuthor = author
 					}
-					if _, _, err := project.Store.RecordRevision(ctx, project.Project.Config.Project.ID, &spec, boundaryAuthor); err != nil {
+					if _, _, err := project.Store.RecordRevision(ctx, project.Project.Config.Project.ID, project.Project.Root, &spec, boundaryAuthor); err != nil {
 						return err
 					}
 				}
-				if _, err := project.Store.RestoreRevision(ctx, project.Project.Config.Project.ID, &spec, *target.revision, author); err != nil {
+				if _, recorded, err := project.Store.RestoreRevision(ctx, project.Project.Config.Project.ID, project.Project.Root, &spec, *target.revision, author); err != nil {
 					return err
+				} else if !recorded {
+					if err := warnUnresolvedBindings(cmd, project.Project.Root, spec.Features); err != nil {
+						return err
+					}
 				}
 			}
 
@@ -195,7 +207,7 @@ func newEditCommand(stdout io.Writer) *cobra.Command {
 				if boundaryAuthor.Name == "" {
 					boundaryAuthor = author
 				}
-				if _, _, err := project.Store.RecordRevision(ctx, project.Project.Config.Project.ID, &spec, boundaryAuthor); err != nil {
+				if _, _, err := project.Store.RecordRevision(ctx, project.Project.Config.Project.ID, project.Project.Root, &spec, boundaryAuthor); err != nil {
 					return err
 				}
 			}
@@ -220,11 +232,26 @@ func newEditCommand(stdout io.Writer) *cobra.Command {
 				return nil
 			}
 			oldStatus := spec.Status
-			spec.Title, spec.Parents, spec.Body = doc.Title, doc.Parents, doc.Body
+			spec.Title, spec.Parents, spec.Features, spec.Body = doc.Title, doc.Parents, doc.Features, doc.Body
 			if meaningful && oldStatus != sloop.StatusDraft {
 				spec.Status = sloop.StatusDraft
 			} else {
 				spec.Status = requestedStatus
+			}
+			resolutions, err := sloop.ResolveFeatureBindings(project.Project.Root, spec.Features)
+			if err != nil {
+				return err
+			}
+			bindingsResolved := sloop.FeatureBindingsResolved(resolutions)
+			if !bindingsResolved && spec.Status != sloop.StatusDraft {
+				return fmt.Errorf("%s", sloop.FormatUnresolvedFeatureBindings(resolutions,
+					fmt.Sprintf("%s contains unresolved feature bindings.", spec.ID),
+					fmt.Sprintf("Remove or update the bindings before setting status %s.", spec.Status)))
+			}
+			if !bindingsResolved && (record || authorBoundary) {
+				return fmt.Errorf("%s", sloop.FormatUnresolvedFeatureBindings(resolutions,
+					fmt.Sprintf("%s contains unresolved feature bindings.", spec.ID),
+					"Remove or update the bindings before recording an author boundary."))
 			}
 			spec.Author = author
 			spec.UpdatedAt = time.Now().Truncate(time.Microsecond)
@@ -232,8 +259,12 @@ func newEditCommand(stdout io.Writer) *cobra.Command {
 			if err := project.Store.SaveSpecification(ctx, spec); err != nil {
 				return err
 			}
-			if record || authorBoundary || spec.Status != oldStatus {
-				if _, _, err := project.Store.RecordRevision(ctx, project.Project.Config.Project.ID, &spec, author); err != nil {
+			if !bindingsResolved {
+				cmd.PrintErrln(sloop.FormatUnresolvedFeatureBindings(resolutions,
+					"Warning: unresolved feature binding.", ""))
+			}
+			if bindingsResolved && (record || authorBoundary || spec.Status != oldStatus) {
+				if _, _, err := project.Store.RecordRevision(ctx, project.Project.Config.Project.ID, project.Project.Root, &spec, author); err != nil {
 					return err
 				}
 			}

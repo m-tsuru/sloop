@@ -60,6 +60,7 @@ func newRootCommand(stdout, stderr io.Writer) *cobra.Command {
 	cmd.AddCommand(newReviewCommand("REJECTED", stdout))
 	cmd.AddCommand(newAgentRunCommand(stdout))
 	cmd.AddCommand(newReferenceCommand(stdout))
+	cmd.AddCommand(newBindingCommand(stdout))
 	cmd.AddCommand(newListCommand(stdout))
 	cmd.AddCommand(newViewCommand(stdout))
 	cmd.AddCommand(newQueryCommand(stdout))

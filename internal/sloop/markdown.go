@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -12,11 +13,12 @@ import (
 )
 
 type EditableDocument struct {
-	ID      string   `yaml:"id"`
-	Title   string   `yaml:"title"`
-	Status  string   `yaml:"status"`
-	Parents []string `yaml:"parents"`
-	Body    string   `yaml:"-"`
+	ID       string          `yaml:"id"`
+	Title    string          `yaml:"title"`
+	Status   string          `yaml:"status"`
+	Parents  []string        `yaml:"parents"`
+	Features FeatureBindings `yaml:"func"`
+	Body     string          `yaml:"-"`
 }
 
 var forbiddenEditableFields = map[string]bool{
@@ -62,6 +64,13 @@ func ParseEditable(data []byte) (EditableDocument, error) {
 	if doc.Parents == nil {
 		doc.Parents = []string{}
 	}
+	doc.Features, err = NormalizeFeatureBindings(doc.Features)
+	if err != nil {
+		return EditableDocument{}, err
+	}
+	if err := validateFeatureSections(doc.Body, doc.Features); err != nil {
+		return EditableDocument{}, err
+	}
 	return doc, nil
 }
 
@@ -77,6 +86,20 @@ func RenderEditable(spec Specification) string {
 		out.WriteString("parents:\n")
 		for _, parent := range spec.Parents {
 			out.WriteString("  - " + strconv.Quote(parent) + "\n")
+		}
+	}
+	if len(spec.Features) > 0 {
+		out.WriteString("func:\n")
+		ids := make([]string, 0, len(spec.Features))
+		for id := range spec.Features {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		for _, id := range ids {
+			binding := spec.Features[id]
+			out.WriteString("  " + id + ":\n")
+			writeEditableLocators(&out, "impls", binding.Impls)
+			writeEditableLocators(&out, "tests", binding.Tests)
 		}
 	}
 	out.WriteString("---\n\n")
@@ -97,7 +120,41 @@ func normalizeBody(value string) string {
 	return value
 }
 
-var sectionHeading = regexp.MustCompile(`^#{1,6}[ \t]+.*?[ \t]+\{#([A-Za-z0-9_-]+)\}[ \t]*$`)
+var sectionHeading = regexp.MustCompile(`^#{1,6}[ \t]+.*?[ \t]+\{#([^}\t ]+)\}[ \t]*$`)
+
+func writeEditableLocators(out *strings.Builder, name string, locators []string) {
+	if len(locators) == 0 {
+		out.WriteString("    " + name + ": []\n")
+		return
+	}
+	out.WriteString("    " + name + ":\n")
+	for _, locator := range locators {
+		out.WriteString("      - " + strconv.Quote(locator) + "\n")
+	}
+}
+
+func validateFeatureSections(markdown string, features FeatureBindings) error {
+	counts := make(map[string]int)
+	scanner := bufio.NewScanner(strings.NewReader(normalizeLF(markdown)))
+	for scanner.Scan() {
+		match := sectionHeading.FindStringSubmatch(scanner.Text())
+		if match == nil || !strings.HasPrefix(match[1], "func:") {
+			continue
+		}
+		id := strings.TrimPrefix(match[1], "func:")
+		if err := ValidateFeatureID(id); err != nil {
+			return fmt.Errorf("invalid feature section %q: %w", match[1], err)
+		}
+		if _, ok := features[id]; !ok {
+			return fmt.Errorf("feature section %q has no corresponding front matter func entry", match[1])
+		}
+		counts[id]++
+		if counts[id] > 1 {
+			return fmt.Errorf("feature ID %q is used by more than one Markdown section", id)
+		}
+	}
+	return scanner.Err()
+}
 
 // Sections returns section bodies keyed by explicit Markdown section ID.
 func Sections(markdown string) map[string]string {
@@ -148,5 +205,5 @@ func EqualMeaning(a Specification, doc EditableDocument) bool {
 			return false
 		}
 	}
-	return true
+	return EqualFeatureBindings(a.Features, doc.Features)
 }

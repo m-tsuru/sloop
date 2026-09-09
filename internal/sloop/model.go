@@ -52,6 +52,50 @@ type Reference struct {
 	CreatedAt time.Time `json:"created_at" yaml:"created-at"`
 }
 
+type FeatureBinding struct {
+	Impls []string `json:"impls" yaml:"impls"`
+	Tests []string `json:"tests" yaml:"tests"`
+}
+
+type FeatureBindings map[string]FeatureBinding
+
+type BindingResolutionStatus string
+
+const (
+	BindingResolved    BindingResolutionStatus = "RESOLVED"
+	BindingMissing     BindingResolutionStatus = "MISSING"
+	BindingAmbiguous   BindingResolutionStatus = "AMBIGUOUS"
+	BindingUnsupported BindingResolutionStatus = "UNSUPPORTED"
+)
+
+type BindingResolution struct {
+	Locator string                  `json:"locator"`
+	Path    string                  `json:"path"`
+	Symbol  string                  `json:"symbol"`
+	Status  BindingResolutionStatus `json:"status"`
+}
+
+type FeatureResolution struct {
+	ID      string              `json:"id"`
+	Section string              `json:"section"`
+	Impls   []BindingResolution `json:"impls"`
+	Tests   []BindingResolution `json:"tests"`
+}
+
+func (r FeatureResolution) Resolved() bool {
+	for _, binding := range r.Impls {
+		if binding.Status != BindingResolved {
+			return false
+		}
+	}
+	for _, binding := range r.Tests {
+		if binding.Status != BindingResolved {
+			return false
+		}
+	}
+	return true
+}
+
 type Specification struct {
 	UUID       string
 	ID         string
@@ -64,24 +108,26 @@ type Specification struct {
 	UpdatedAt  time.Time
 	HeadHash   string
 	Dirty      bool
+	Features   FeatureBindings
 	References []Reference
 }
 
 type Revision struct {
-	FormatVersion        int         `json:"format_version"`
-	Hash                 string      `json:"hash"`
-	ProjectID            string      `json:"project_id"`
-	SpecificationUUID    string      `json:"specification_uuid"`
-	SpecificationID      string      `json:"specification_id"`
-	RevisionNumber       int         `json:"revision_number"`
-	ParentRevisionHashes []string    `json:"parent_revision_hashes"`
-	Author               Author      `json:"author"`
-	Title                string      `json:"title"`
-	Content              string      `json:"content"`
-	Status               Status      `json:"status"`
-	Parents              []string    `json:"parents"`
-	References           []Reference `json:"references"`
-	CreatedAt            time.Time   `json:"created_at"`
+	FormatVersion        int             `json:"format_version"`
+	Hash                 string          `json:"hash"`
+	ProjectID            string          `json:"project_id"`
+	SpecificationUUID    string          `json:"specification_uuid"`
+	SpecificationID      string          `json:"specification_id"`
+	RevisionNumber       int             `json:"revision_number"`
+	ParentRevisionHashes []string        `json:"parent_revision_hashes"`
+	Author               Author          `json:"author"`
+	Title                string          `json:"title"`
+	Content              string          `json:"content"`
+	Status               Status          `json:"status"`
+	Parents              []string        `json:"parents"`
+	Features             FeatureBindings `json:"features"`
+	References           []Reference     `json:"references"`
+	CreatedAt            time.Time       `json:"created_at"`
 }
 
 type RevisionSummary struct {

@@ -160,15 +160,16 @@ type viewLog struct {
 }
 
 type viewFrontMatter struct {
-	Project      string            `yaml:"project"`
-	ID           string            `yaml:"id"`
-	Title        string            `yaml:"title"`
-	Status       sloop.Status      `yaml:"status"`
-	Revision     int               `yaml:"revision,omitempty"`
-	RevisionHash string            `yaml:"revision-hash,omitempty"`
-	Parents      []string          `yaml:"parents"`
-	References   []sloop.Reference `yaml:"references,omitempty"`
-	Log          []viewLog         `yaml:"log,omitempty"`
+	Project      string                `yaml:"project"`
+	ID           string                `yaml:"id"`
+	Title        string                `yaml:"title"`
+	Status       sloop.Status          `yaml:"status"`
+	Revision     int                   `yaml:"revision,omitempty"`
+	RevisionHash string                `yaml:"revision-hash,omitempty"`
+	Parents      []string              `yaml:"parents"`
+	Features     sloop.FeatureBindings `yaml:"func,omitempty"`
+	References   []sloop.Reference     `yaml:"references,omitempty"`
+	Log          []viewLog             `yaml:"log,omitempty"`
 }
 
 func newViewCommand(stdout io.Writer) *cobra.Command {
@@ -189,12 +190,12 @@ func newViewCommand(stdout io.Writer) *cobra.Command {
 			}
 			spec := target.spec
 			body := spec.Body
-			status, title, parents, refs := spec.Status, spec.Title, spec.Parents, spec.References
+			status, title, parents, features, refs := spec.Status, spec.Title, spec.Parents, spec.Features, spec.References
 			var revisionNumber int
 			var revisionHash string
 			if target.revision != nil {
 				body, status, title = target.revision.Content, target.revision.Status, target.revision.Title
-				parents, refs = target.revision.Parents, target.revision.References
+				parents, features, refs = target.revision.Parents, target.revision.Features, target.revision.References
 				revisionNumber, revisionHash = target.revision.RevisionNumber, target.revision.Hash
 			} else if spec.HeadHash != "" && !spec.Dirty {
 				revision, err := project.Store.RevisionByHash(cmd.Context(), spec.HeadHash)
@@ -216,7 +217,8 @@ func newViewCommand(stdout io.Writer) *cobra.Command {
 				return err
 			}
 			front := viewFrontMatter{Project: project.Project.Config.Project.ID, ID: spec.ID, Title: title,
-				Status: status, Revision: revisionNumber, RevisionHash: shortHash(revisionHash), Parents: parents, References: refs}
+				Status: status, Revision: revisionNumber, RevisionHash: shortHash(revisionHash), Parents: parents,
+				Features: features, References: refs}
 			for _, revision := range revisions {
 				if revisionNumber > 0 && revision.RevisionNumber > revisionNumber {
 					break
@@ -281,21 +283,23 @@ func newQueryCommand(stdout io.Writer) *cobra.Command {
 }
 
 type contextDocument struct {
-	ProjectID          string              `json:"project_id"`
-	SpecificationID    string              `json:"specification_id"`
-	RevisionHash       string              `json:"revision_hash,omitempty"`
-	Recorded           bool                `json:"recorded"`
-	Status             sloop.Status        `json:"status"`
-	Title              string              `json:"title"`
-	Goal               string              `json:"goal"`
-	Specification      string              `json:"specification"`
-	AcceptanceCriteria string              `json:"acceptance_criteria"`
-	Sections           map[string]string   `json:"sections"`
-	Parents            []string            `json:"parents"`
-	References         []sloop.Reference   `json:"references"`
-	GitRelations       []sloop.GitRelation `json:"git_relations"`
-	Reviews            []sloop.Review      `json:"reviews,omitempty"`
-	ReviewPolicy       string              `json:"review_policy"`
+	ProjectID          string                    `json:"project_id"`
+	SpecificationID    string                    `json:"specification_id"`
+	SpecificationUUID  string                    `json:"specification_uuid"`
+	RevisionHash       string                    `json:"revision_hash,omitempty"`
+	Recorded           bool                      `json:"recorded"`
+	Status             sloop.Status              `json:"status"`
+	Title              string                    `json:"title"`
+	Goal               string                    `json:"goal"`
+	Specification      string                    `json:"specification"`
+	AcceptanceCriteria string                    `json:"acceptance_criteria"`
+	Sections           map[string]string         `json:"sections"`
+	Parents            []string                  `json:"parents"`
+	References         []sloop.Reference         `json:"references"`
+	Features           []sloop.FeatureResolution `json:"features"`
+	GitRelations       []sloop.GitRelation       `json:"git_relations"`
+	Reviews            []sloop.Review            `json:"reviews,omitempty"`
+	ReviewPolicy       string                    `json:"review_policy"`
 }
 
 func newContextCommand(stdout io.Writer) *cobra.Command {
@@ -319,17 +323,29 @@ func newContextCommand(stdout io.Writer) *cobra.Command {
 			}
 			document := contextDocument{
 				ProjectID: project.Project.Config.Project.ID, SpecificationID: spec.ID,
-				Recorded: !working, Status: spec.Status, Title: spec.Title, Parents: spec.Parents,
+				SpecificationUUID: spec.UUID,
+				Recorded:          !working, Status: spec.Status, Title: spec.Title, Parents: spec.Parents,
 				References: spec.References, ReviewPolicy: reviewPolicy(spec.Status),
 			}
 			body := spec.Body
+			features := spec.Features
 			if !working {
 				revision, err := project.Store.RevisionByHash(cmd.Context(), spec.HeadHash)
 				if err != nil {
 					return err
 				}
 				document.RevisionHash, document.Status, document.Title = revision.Hash, revision.Status, revision.Title
-				document.Parents, document.References, body = revision.Parents, revision.References, revision.Content
+				document.Parents, document.References, features, body = revision.Parents, revision.References, revision.Features, revision.Content
+			}
+			document.Features, err = featureBindingsForContext(project.Project.Root, features)
+			if err != nil {
+				return err
+			}
+			if (document.Status == sloop.StatusReady || document.Status == sloop.StatusForceReady) &&
+				!sloop.FeatureBindingsResolved(document.Features) {
+				return fmt.Errorf("%s", sloop.FormatUnresolvedFeatureBindings(document.Features,
+					fmt.Sprintf("%s contains unresolved feature bindings.", spec.ID),
+					"Remove or update the bindings before generating an agent context."))
 			}
 			document.Sections = sloop.Sections(body)
 			document.Goal = document.Sections["goal"]
@@ -384,7 +400,7 @@ func reviewPolicy(status sloop.Status) string {
 
 func writeTextContext(output io.Writer, document contextDocument) {
 	fmt.Fprintln(output, "# Sloop Agent Context")
-	fmt.Fprintf(output, "\nSpecification ID: %s\nTitle: %s\nRevision Hash: %s\nStatus: %s\nRecorded: %t\n", document.SpecificationID, document.Title, document.RevisionHash, document.Status, document.Recorded)
+	fmt.Fprintf(output, "\nSpecification ID: %s\nSpecification UUID: %s\nTitle: %s\nRevision Hash: %s\nStatus: %s\nRecorded: %t\n", document.SpecificationID, document.SpecificationUUID, document.Title, document.RevisionHash, document.Status, document.Recorded)
 	if len(document.Parents) > 0 {
 		fmt.Fprintf(output, "Parents: %s\n", strings.Join(document.Parents, ", "))
 	}
@@ -399,6 +415,16 @@ func writeTextContext(output io.Writer, document contextDocument) {
 			target += " @ " + ref.GitCommit
 		}
 		fmt.Fprintf(output, "- %s: %s\n", ref.Kind, target)
+	}
+	fmt.Fprintln(output, "\n## Feature Bindings")
+	for _, feature := range document.Features {
+		fmt.Fprintf(output, "- func:%s\n", feature.ID)
+		for _, binding := range feature.Impls {
+			fmt.Fprintf(output, "  - impl: %s [%s]\n", binding.Locator, binding.Status)
+		}
+		for _, binding := range feature.Tests {
+			fmt.Fprintf(output, "  - test: %s [%s]\n", binding.Locator, binding.Status)
+		}
 	}
 	fmt.Fprintln(output, "\n## Git Relations")
 	for _, relation := range document.GitRelations {

@@ -99,10 +99,11 @@ func (s *Store) RebuildIndex(ctx context.Context, projectID string) (int, error)
 				return 0, err
 			}
 			parents, _ := json.Marshal(head.Parents)
+			features, _ := json.Marshal(head.Features)
 			if _, err := tx.ExecContext(ctx, `INSERT INTO specifications
-                (uuid,id,number,title,status,body,parents_json,author_name,author_email,author_agent,updated_at,head_hash,dirty)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,0)`, head.SpecificationUUID, head.SpecificationID, number,
-				head.Title, head.Status, head.Content, string(parents), head.Author.Name, head.Author.Email,
+                (uuid,id,number,title,status,body,parents_json,features_json,author_name,author_email,author_agent,updated_at,head_hash,dirty)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,0)`, head.SpecificationUUID, head.SpecificationID, number,
+				head.Title, head.Status, head.Content, string(parents), string(features), head.Author.Name, head.Author.Email,
 				head.Author.Agent, head.CreatedAt.Format(time.RFC3339Nano), head.Hash); err != nil {
 				return 0, fmt.Errorf("rebuild specification index: %w", err)
 			}
@@ -115,9 +116,10 @@ func (s *Store) RebuildIndex(ctx context.Context, projectID string) (int, error)
 				return 0, err
 			}
 			parents, _ := json.Marshal(head.Parents)
-			if _, err := tx.ExecContext(ctx, `UPDATE specifications SET id=?,number=?,title=?,status=?,body=?,parents_json=?,
+			features, _ := json.Marshal(head.Features)
+			if _, err := tx.ExecContext(ctx, `UPDATE specifications SET id=?,number=?,title=?,status=?,body=?,parents_json=?,features_json=?,
                 author_name=?,author_email=?,author_agent=?,updated_at=?,head_hash=?,dirty=0 WHERE uuid=?`,
-				head.SpecificationID, number, head.Title, head.Status, head.Content, string(parents),
+				head.SpecificationID, number, head.Title, head.Status, head.Content, string(parents), string(features),
 				head.Author.Name, head.Author.Email, head.Author.Agent, head.CreatedAt.Format(time.RFC3339Nano),
 				head.Hash, specUUID); err != nil {
 				return 0, fmt.Errorf("refresh specification index: %w", err)

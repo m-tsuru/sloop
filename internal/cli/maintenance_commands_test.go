@@ -11,10 +11,13 @@ import (
 func TestIndexRebuildRecoversFromDeletedDatabase(t *testing.T) {
 	repo := setupProject(t)
 	createDraftSpecification(t)
-	if err := os.WriteFile(repo+"/referenced.go", []byte("package fixture\n"), 0o644); err != nil {
+	if err := os.WriteFile(repo+"/referenced.go", []byte("package fixture\n\nfunc Rebuild() {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := executeForTest(t, "ref", "add", "1", "--kind", "code", "referenced.go"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := executeForTest(t, "bind", "add", "1", "rebuild", "--impl", "referenced.go:Rebuild"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := executeForTest(t, "ready", "1", "--author.name", "human"); err != nil {
@@ -39,12 +42,17 @@ func TestIndexRebuildRecoversFromDeletedDatabase(t *testing.T) {
 	project, _ = openProject()
 	defer project.Store.Close()
 	spec, err := project.Store.SpecificationByID(context.Background(), "demo-1")
-	if err != nil || spec.Dirty || len(spec.HeadHash) != 64 || len(spec.References) != 1 || spec.References[0].Path != "referenced.go" {
+	if err != nil || spec.Dirty || len(spec.HeadHash) != 64 || len(spec.References) != 1 || spec.References[0].Path != "referenced.go" ||
+		len(spec.Features) != 1 || spec.Features["rebuild"].Impls[0] != "referenced.go:Rebuild" {
 		t.Fatalf("specification not recovered: %#v, %v", spec, err)
 	}
 	revisions, err := project.Store.Revisions(context.Background(), spec.UUID)
 	if err != nil || len(revisions) != 1 || revisions[0].Hash != spec.HeadHash {
 		t.Fatalf("revisions not recovered: %#v, %v", revisions, err)
+	}
+	revision, err := project.Store.RevisionByHash(context.Background(), spec.HeadHash)
+	if err != nil || revision.Features["rebuild"].Impls[0] != "referenced.go:Rebuild" {
+		t.Fatalf("revision feature binding not recovered: %#v, %v", revision.Features, err)
 	}
 }
 

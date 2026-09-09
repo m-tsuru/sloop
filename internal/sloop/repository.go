@@ -31,10 +31,14 @@ func (s *Store) CreateSpecification(ctx context.Context, spec Specification) err
 	if err != nil {
 		return err
 	}
+	features, err := json.Marshal(spec.Features)
+	if err != nil {
+		return err
+	}
 	_, err = s.DB.ExecContext(ctx, `INSERT INTO specifications
-        (uuid,id,number,title,status,body,parents_json,author_name,author_email,author_agent,updated_at,head_hash,dirty)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, spec.UUID, spec.ID, spec.Number, spec.Title, spec.Status,
-		normalizeBody(spec.Body), string(parents), spec.Author.Name, spec.Author.Email, spec.Author.Agent,
+        (uuid,id,number,title,status,body,parents_json,features_json,author_name,author_email,author_agent,updated_at,head_hash,dirty)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, spec.UUID, spec.ID, spec.Number, spec.Title, spec.Status,
+		normalizeBody(spec.Body), string(parents), string(features), spec.Author.Name, spec.Author.Email, spec.Author.Agent,
 		spec.UpdatedAt.Format(time.RFC3339Nano), nil, 1)
 	if err != nil {
 		return fmt.Errorf("create specification: %w", err)
@@ -44,10 +48,10 @@ func (s *Store) CreateSpecification(ctx context.Context, spec Specification) err
 
 func scanSpecification(row interface{ Scan(...any) error }) (Specification, error) {
 	var spec Specification
-	var status, parentsJSON, updated string
+	var status, parentsJSON, featuresJSON, updated string
 	var agent, dirty int
 	var head sql.NullString
-	err := row.Scan(&spec.UUID, &spec.ID, &spec.Number, &spec.Title, &status, &spec.Body, &parentsJSON,
+	err := row.Scan(&spec.UUID, &spec.ID, &spec.Number, &spec.Title, &status, &spec.Body, &parentsJSON, &featuresJSON,
 		&spec.Author.Name, &spec.Author.Email, &agent, &updated, &head, &dirty)
 	if err != nil {
 		return Specification{}, err
@@ -59,6 +63,13 @@ func scanSpecification(row interface{ Scan(...any) error }) (Specification, erro
 	if err := json.Unmarshal([]byte(parentsJSON), &spec.Parents); err != nil {
 		return Specification{}, fmt.Errorf("decode specification parents: %w", err)
 	}
+	if err := json.Unmarshal([]byte(featuresJSON), &spec.Features); err != nil {
+		return Specification{}, fmt.Errorf("decode specification feature bindings: %w", err)
+	}
+	spec.Features, err = NormalizeFeatureBindings(spec.Features)
+	if err != nil {
+		return Specification{}, fmt.Errorf("decode specification feature bindings: %w", err)
+	}
 	spec.UpdatedAt, err = time.Parse(time.RFC3339Nano, updated)
 	if err != nil {
 		return Specification{}, fmt.Errorf("decode specification timestamp: %w", err)
@@ -66,7 +77,7 @@ func scanSpecification(row interface{ Scan(...any) error }) (Specification, erro
 	return spec, nil
 }
 
-const selectSpecification = `SELECT uuid,id,number,title,status,body,parents_json,author_name,author_email,author_agent,updated_at,head_hash,dirty FROM specifications`
+const selectSpecification = `SELECT uuid,id,number,title,status,body,parents_json,features_json,author_name,author_email,author_agent,updated_at,head_hash,dirty FROM specifications`
 
 func (s *Store) SpecificationByID(ctx context.Context, id string) (Specification, error) {
 	spec, err := scanSpecification(s.DB.QueryRowContext(ctx, selectSpecification+` WHERE id = ?`, id))
@@ -111,9 +122,13 @@ func (s *Store) SaveSpecification(ctx context.Context, spec Specification) error
 	if err != nil {
 		return err
 	}
-	_, err = s.DB.ExecContext(ctx, `UPDATE specifications SET title=?,status=?,body=?,parents_json=?,
+	features, err := json.Marshal(spec.Features)
+	if err != nil {
+		return err
+	}
+	_, err = s.DB.ExecContext(ctx, `UPDATE specifications SET title=?,status=?,body=?,parents_json=?,features_json=?,
         author_name=?,author_email=?,author_agent=?,updated_at=?,dirty=? WHERE uuid=?`,
-		spec.Title, spec.Status, normalizeBody(spec.Body), string(parents), spec.Author.Name, spec.Author.Email,
+		spec.Title, spec.Status, normalizeBody(spec.Body), string(parents), string(features), spec.Author.Name, spec.Author.Email,
 		spec.Author.Agent, spec.UpdatedAt.Format(time.RFC3339Nano), spec.Dirty, spec.UUID)
 	if err != nil {
 		return fmt.Errorf("save specification: %w", err)
@@ -165,6 +180,27 @@ type canonicalRevision struct {
 	References           []canonicalReference `json:"references"`
 }
 
+type canonicalRevisionV2 struct {
+	FormatVersion        int                  `json:"format_version"`
+	ProjectID            string               `json:"project_id"`
+	SpecificationUUID    string               `json:"specification_uuid"`
+	SpecificationID      string               `json:"specification_id"`
+	ParentRevisionHashes []string             `json:"parent_revision_hashes"`
+	Author               Author               `json:"author"`
+	Title                string               `json:"title"`
+	Content              string               `json:"content"`
+	Status               Status               `json:"status"`
+	Parents              []string             `json:"parents"`
+	References           []canonicalReference `json:"references"`
+	Features             []canonicalFeature   `json:"features"`
+}
+
+type canonicalFeature struct {
+	ID    string   `json:"id"`
+	Impls []string `json:"impls"`
+	Tests []string `json:"tests"`
+}
+
 type canonicalReference struct {
 	ID        string `json:"id"`
 	Kind      string `json:"kind"`
@@ -186,11 +222,28 @@ func revisionHash(revision Revision) (string, error) {
 		b, _ := json.Marshal(refs[j])
 		return string(a) < string(b)
 	})
-	canonical := canonicalRevision{
-		ProjectID: revision.ProjectID, SpecificationUUID: revision.SpecificationUUID,
-		SpecificationID: revision.SpecificationID, ParentRevisionHashes: parents,
-		Author: revision.Author, Title: revision.Title, Content: normalizeBody(revision.Content),
-		Status: revision.Status, Parents: revision.Parents, References: refs,
+	var canonical any
+	if revision.FormatVersion >= 2 {
+		features, err := canonicalFeatures(revision.Features)
+		if err != nil {
+			return "", err
+		}
+		canonical = canonicalRevisionV2{
+			FormatVersion: revision.FormatVersion, ProjectID: revision.ProjectID,
+			SpecificationUUID: revision.SpecificationUUID, SpecificationID: revision.SpecificationID,
+			ParentRevisionHashes: parents, Author: revision.Author, Title: revision.Title,
+			Content: normalizeBody(revision.Content), Status: revision.Status, Parents: revision.Parents,
+			References: refs, Features: features,
+		}
+	} else {
+		// Keep the original representation byte-for-byte compatible so existing
+		// format-version 1 objects continue to verify.
+		canonical = canonicalRevision{
+			ProjectID: revision.ProjectID, SpecificationUUID: revision.SpecificationUUID,
+			SpecificationID: revision.SpecificationID, ParentRevisionHashes: parents,
+			Author: revision.Author, Title: revision.Title, Content: normalizeBody(revision.Content),
+			Status: revision.Status, Parents: revision.Parents, References: refs,
+		}
 	}
 	data, err := json.Marshal(canonical)
 	if err != nil {
@@ -200,10 +253,39 @@ func revisionHash(revision Revision) (string, error) {
 	return hex.EncodeToString(hash[:]), nil
 }
 
-func (s *Store) RecordRevision(ctx context.Context, projectID string, spec *Specification, author Author) (Revision, bool, error) {
+func canonicalFeatures(features FeatureBindings) ([]canonicalFeature, error) {
+	features, err := NormalizeFeatureBindings(features)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(features))
+	for id := range features {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	result := make([]canonicalFeature, 0, len(ids))
+	for _, id := range ids {
+		binding := features[id]
+		result = append(result, canonicalFeature{
+			ID: id, Impls: append([]string(nil), binding.Impls...), Tests: append([]string(nil), binding.Tests...),
+		})
+	}
+	return result, nil
+}
+
+func (s *Store) RecordRevision(ctx context.Context, projectID, repositoryRoot string, spec *Specification, author Author) (Revision, bool, error) {
 	if !spec.Dirty && spec.HeadHash != "" {
 		revision, err := s.RevisionByHash(ctx, spec.HeadHash)
 		return revision, false, err
+	}
+	resolutions, err := ResolveFeatureBindings(repositoryRoot, spec.Features)
+	if err != nil {
+		return Revision{}, false, err
+	}
+	if !FeatureBindingsResolved(resolutions) {
+		return Revision{}, false, errors.New(FormatUnresolvedFeatureBindings(resolutions,
+			fmt.Sprintf("%s contains unresolved feature bindings.", spec.ID),
+			"Remove or update the bindings before recording a revision."))
 	}
 	refs, err := s.References(ctx, spec.UUID)
 	if err != nil {
@@ -219,10 +301,11 @@ func (s *Store) RecordRevision(ctx context.Context, projectID string, spec *Spec
 	}
 	now := time.Now().Truncate(time.Microsecond)
 	revision := Revision{
-		FormatVersion: 1, ProjectID: projectID, SpecificationUUID: spec.UUID, SpecificationID: spec.ID,
+		FormatVersion: 2, ProjectID: projectID, SpecificationUUID: spec.UUID, SpecificationID: spec.ID,
 		RevisionNumber: revisionNumber, ParentRevisionHashes: parentHashes, Author: author,
 		Title: spec.Title, Content: normalizeBody(spec.Body), Status: spec.Status,
-		Parents: append([]string(nil), spec.Parents...), References: refs, CreatedAt: now,
+		Parents: append([]string(nil), spec.Parents...), Features: CloneFeatureBindings(spec.Features),
+		References: refs, CreatedAt: now,
 	}
 	revision.Hash, err = revisionHash(revision)
 	if err != nil {
@@ -415,43 +498,58 @@ func isHexPrefix(value string) bool {
 	return value != ""
 }
 
-func (s *Store) RestoreRevision(ctx context.Context, projectID string, spec *Specification, source Revision, author Author) (Revision, error) {
+func (s *Store) RestoreRevision(ctx context.Context, projectID, repositoryRoot string, spec *Specification, source Revision, author Author) (Revision, bool, error) {
 	spec.Title = source.Title
 	spec.Status = source.Status
 	spec.Body = source.Content
 	spec.Parents = append([]string(nil), source.Parents...)
+	spec.Features = CloneFeatureBindings(source.Features)
 	spec.Author = author
 	spec.UpdatedAt = time.Now().Truncate(time.Microsecond)
 	spec.Dirty = true
+	resolutions, err := ResolveFeatureBindings(repositoryRoot, spec.Features)
+	if err != nil {
+		return Revision{}, false, err
+	}
+	record := FeatureBindingsResolved(resolutions)
+	if !record {
+		// Historical facts remain immutable, but an unresolved historical
+		// binding may be restored into a mutable DRAFT working state.
+		spec.Status = StatusDraft
+	}
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return Revision{}, err
+		return Revision{}, false, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM specification_references WHERE spec_uuid=?`, spec.UUID); err != nil {
 		tx.Rollback()
-		return Revision{}, err
+		return Revision{}, false, err
 	}
 	for _, ref := range source.References {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO specification_references
             (id,spec_uuid,kind,path,start_line,end_line,git_commit,created_at) VALUES(?,?,?,?,?,?,?,?)`,
 			ref.ID, spec.UUID, ref.Kind, ref.Path, ref.StartLine, ref.EndLine, nullString(ref.GitCommit), ref.CreatedAt.Format(time.RFC3339Nano)); err != nil {
 			tx.Rollback()
-			return Revision{}, err
+			return Revision{}, false, err
 		}
 	}
 	parents, _ := json.Marshal(spec.Parents)
-	if _, err := tx.ExecContext(ctx, `UPDATE specifications SET title=?,status=?,body=?,parents_json=?,author_name=?,author_email=?,author_agent=?,updated_at=?,dirty=1 WHERE uuid=?`,
-		spec.Title, spec.Status, spec.Body, string(parents), author.Name, author.Email, author.Agent,
+	features, _ := json.Marshal(spec.Features)
+	if _, err := tx.ExecContext(ctx, `UPDATE specifications SET title=?,status=?,body=?,parents_json=?,features_json=?,author_name=?,author_email=?,author_agent=?,updated_at=?,dirty=1 WHERE uuid=?`,
+		spec.Title, spec.Status, spec.Body, string(parents), string(features), author.Name, author.Email, author.Agent,
 		spec.UpdatedAt.Format(time.RFC3339Nano), spec.UUID); err != nil {
 		tx.Rollback()
-		return Revision{}, err
+		return Revision{}, false, err
 	}
 	if err := tx.Commit(); err != nil {
-		return Revision{}, err
+		return Revision{}, false, err
 	}
 	spec.References = source.References
-	revision, _, err := s.RecordRevision(ctx, projectID, spec, author)
-	return revision, err
+	if !record {
+		return Revision{}, false, nil
+	}
+	revision, _, err := s.RecordRevision(ctx, projectID, repositoryRoot, spec, author)
+	return revision, true, err
 }
 
 func nullString(value string) any {
@@ -469,7 +567,7 @@ func ParseSpecificationNumber(value string) (int, bool) {
 func NewSpecification(prefix string, number int, author Author, body string) Specification {
 	return Specification{
 		UUID: uuid.NewString(), ID: fmt.Sprintf("%s-%d", prefix, number), Number: number,
-		Status: StatusDraft, Body: normalizeBody(body), Parents: []string{}, Author: author,
+		Status: StatusDraft, Body: normalizeBody(body), Parents: []string{}, Features: FeatureBindings{}, Author: author,
 		UpdatedAt: time.Now().Truncate(time.Microsecond), Dirty: true,
 	}
 }

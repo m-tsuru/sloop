@@ -82,9 +82,14 @@ func changeStatuses(cmd *cobra.Command, stdout io.Writer, selectors string, stat
 		if spec.Status == status {
 			continue
 		}
+		if _, err := validateSpecificationBindings(project.Project.Root, spec,
+			fmt.Sprintf("Remove or update the bindings before setting status %s.", status)); err != nil {
+			return err
+		}
 		if author.Agent && (spec.HeadHash == "" || spec.Dirty) {
 			return fmt.Errorf("agent status transitions require a current recorded revision for %s", spec.ID)
 		}
+		previous := spec
 		basedOn := spec.HeadHash
 		spec.Status = status
 		spec.Author = author
@@ -93,8 +98,11 @@ func changeStatuses(cmd *cobra.Command, stdout io.Writer, selectors string, stat
 		if err := project.Store.SaveSpecification(cmd.Context(), spec); err != nil {
 			return err
 		}
-		revision, _, err := project.Store.RecordRevision(cmd.Context(), project.Project.Config.Project.ID, &spec, author)
+		revision, _, err := project.Store.RecordRevision(cmd.Context(), project.Project.Config.Project.ID, project.Project.Root, &spec, author)
 		if err != nil {
+			if rollbackErr := project.Store.SaveSpecification(cmd.Context(), previous); rollbackErr != nil {
+				return fmt.Errorf("%w (also failed to restore previous working state: %v)", err, rollbackErr)
+			}
 			return err
 		}
 		if err := project.Store.RecordStatusTransition(cmd.Context(), sloop.StatusTransition{

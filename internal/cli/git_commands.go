@@ -65,7 +65,7 @@ func newCommitRecordCommand(stdout io.Writer) *cobra.Command {
 					if authorOptions.name != "" || authorOptions.email != "" || authorOptions.agent {
 						author = authorOptions.resolve(project.Project.Root)
 					}
-					if _, _, err := project.Store.RecordRevision(cmd.Context(), project.Project.Config.Project.ID, &spec, author); err != nil {
+					if _, _, err := project.Store.RecordRevision(cmd.Context(), project.Project.Config.Project.ID, project.Project.Root, &spec, author); err != nil {
 						return err
 					}
 				}

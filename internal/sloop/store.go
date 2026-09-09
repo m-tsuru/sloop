@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS specifications (
     status TEXT NOT NULL,
     body TEXT NOT NULL,
     parents_json TEXT NOT NULL,
+    features_json TEXT NOT NULL DEFAULT '{}',
     author_name TEXT NOT NULL,
     author_email TEXT NOT NULL,
     author_agent INTEGER NOT NULL,
@@ -170,6 +171,36 @@ CREATE TABLE IF NOT EXISTS git_relations (
 `
 	if _, err := db.Exec(schema); err != nil {
 		return fmt.Errorf("initialize database: %w", err)
+	}
+	if err := ensureColumn(db, "specifications", "features_json", "TEXT NOT NULL DEFAULT '{}'"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ensureColumn(db *sql.DB, table, column, definition string) error {
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return fmt.Errorf("inspect %s schema: %w", table, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, columnType string
+		var notNull, primaryKey int
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return fmt.Errorf("inspect %s schema: %w", table, err)
+		}
+		if name == column {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("inspect %s schema: %w", table, err)
+	}
+	if _, err := db.Exec("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition); err != nil {
+		return fmt.Errorf("add %s.%s: %w", table, column, err)
 	}
 	return nil
 }
