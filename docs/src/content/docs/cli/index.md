@@ -41,6 +41,7 @@ sloop <command> --help
 | [status](/cli/status/) | 仕様の状態を変更 |
 | [draft / ready / force-ready / implemented / verified / cancel / complete](/cli/status/#状態-alias) | 状態変更の省略形 |
 | [ref add / list / remove](/cli/ref/) | コード・テスト・補足ファイルを関連付け |
+| [bind add / remove / list](/cli/bind/) | Feature と実装・テスト Symbol を関連付け |
 | [query](/cli/query/) | 複数仕様から Section を取得 |
 | [context](/cli/context/) | Coding Agent 用 Context を出力 |
 | [accept / reject](/cli/review/) | Revision に対するレビューを記録 |
@@ -52,6 +53,6 @@ sloop <command> --help
 
 ## フラグの適用範囲
 
-著者フラグは対応する書き込みコマンドに指定します。[著者情報の解決規則](/configuration/#著者情報)を参照してください。全コマンド共通の `--json` はありません。`--json` は `list` と `context`、`--csv` は `list` のみで利用できます。`--reason` は状態変更・レビュー・Agent Run で利用できます。
+著者フラグは対応する書き込みコマンドに指定します。[著者情報の解決規則](/configuration/#著者情報)を参照してください。全コマンド共通の `--json` はありません。`--json` は `list`、`bind list`、`context`、`--csv` は `list` のみで利用できます。`--reason` は状態変更・レビュー・Agent Run で利用できます。
 
 コマンドの出力は現在英語です。このドキュメントではその意味を日本語で説明しています。

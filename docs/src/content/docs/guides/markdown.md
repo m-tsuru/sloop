@@ -31,6 +31,7 @@ parents: []
 | `title` | 仕様のタイトルを文字列で指定 |
 | `status` | [仕様の状態](/cli/status/)を指定。Agent は直接変更不可 |
 | `parents` | 親仕様の完全な表示 ID を文字列配列で指定。省略時は空配列 |
+| `func` | Feature ID ごとの Implementation/Test Symbol Binding |
 
 ```yaml
 parents:
@@ -52,7 +53,7 @@ parents:
 | `specification` | 実装仕様 |
 | `acceptance-criteria` | 完了・検証条件 |
 
-追加の ID も利用できます。英数字・`_`・`-` を使い、同じ文書では重複させないでください。
+追加の ID も利用できます。Feature Section は `func:<feature-id>` を使用します。
 
 ```md
 ## ユーザーインターフェース {#user-interface}
@@ -64,7 +65,29 @@ sloop view 1 --section user-interface
 sloop query --section user-interface --filter status:completed
 ```
 
-現行の抽出処理は、ID の付いた見出しの次の行から、次の ID 付き見出しの直前までを返します。ID のない小見出しはその内容に含まれます。重複 ID は後の内容で上書きされるため、ID を一意にしてください。
+現行の抽出処理は、ID の付いた見出しの次の行から、次の ID 付き見出しの直前までを返します。ID のない小見出しはその内容に含まれます。`func:` Section の Feature ID は Front Matter に存在し、文書内で一意でなければなりません。
+
+## Feature Binding
+
+`func` は Feature と現在存在する Symbol の事実上の対応を表します。
+
+```yaml
+func:
+  markdownlint:
+    impls:
+      - internal/cmd/cmd.go:LintMarkdown
+      - internal/cmd/cmd.go:MarkdownLinter:Lint
+    tests:
+      - internal/cmd/cmd_test.go:TestLintMarkdown
+```
+
+`impls` と `tests` は空配列、null、または空 Feature として記述でき、内部では空配列へ正規化されます。空であること自体は実装や Test の作成要求ではありません。
+
+```md
+## Markdown lint {#func:markdownlint}
+```
+
+Feature ID は `[a-z0-9][a-z0-9_-]*` に一致する必要があります。DRAFT では現在解決できない Locator を Warning 付きで保持できますが、Revision の記録や READY / FORCEREADY への変更前に削除または修正してください。
 
 ## テンプレート
 

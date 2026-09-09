@@ -13,6 +13,8 @@ sloop context 1 --json > /tmp/sloop-context.json
 
 生成した Context を利用する Agent に渡します。Sloop Core は特定ベンダーの API を呼ばず、CLI の出力で連携します。MCP Server や自動実行 Connector は現在ありません。
 
+この Repository には Codex plugin と `sloop-implement` Skill も含まれます。Plugin 導入後は `/sloop implement sloop-1` または同等の自然言語で Workflow を開始できます。
+
 次のような作業指示を Context とともに渡せます。
 
 ```text
@@ -26,6 +28,17 @@ complete は人間が実行します。
 ```
 
 Reference は参照先のメタデータです。対象ファイルを Agent が読める環境で実行するか、明示的に必要な内容を渡します。
+
+Agent が Feature に対応する新しい Function/Method または Test Symbol を作成した場合、状態変更前に Binding を記録します。
+
+```sh
+sloop bind add 1 markdownlint --impl internal/cmd/cmd.go:LintMarkdown \
+  --author.name coding-agent --author.agent true
+sloop bind add 1 markdownlint --test internal/cmd/cmd_test.go:TestLintMarkdown \
+  --author.name coding-agent --author.agent true
+```
+
+Locator は Symbol 作成後にのみ追加でき、Sloop が `RESOLVED` と判定できない追加は拒否されます。
 
 ## 仕様不足を見つけた場合
 
